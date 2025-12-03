@@ -18,13 +18,20 @@ app.set('views', path.join(__dirname, 'views'));
 const bot = new Telegraf(process.env.BOT_TOKEN);
 bot.use(session());
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
+// Connect to MongoDB (Updated version)
+mongoose.connect(process.env.MONGODB_URI)
+.then(() => {
+    console.log('✅ MongoDB Connected Successfully');
+    
+    // Start bot only after DB connection
+    bot.launch()
+        .then(() => console.log('✅ Bot is running!'))
+        .catch(err => console.log('❌ Bot error:', err));
 })
-.then(() => console.log('✅ MongoDB Connected'))
-.catch(err => console.log('❌ MongoDB Error:', err));
+.catch(err => {
+    console.error('❌ MongoDB Connection Error:', err.message);
+    console.log('⚠️  Check: 1. IP Whitelist 2. Connection String 3. Network Access');
+});
 
 // User Schema
 const userSchema = new mongoose.Schema({
