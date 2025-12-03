@@ -1,111 +1,220 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %></title>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
-            font-family: Arial, sans-serif; 
-            margin: 20px;
-            background: #f5f5f5;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: white;
         }
         .container {
-            max-width: 800px;
+            max-width: 1200px;
             margin: 0 auto;
-            background: white;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
             padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
-        h1 { color: #333; }
-        .stats { 
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 20px;
-            margin: 30px 0;
-        }
-        .stat-box {
-            background: #4CAF50;
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
+        .header {
             text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
         }
-        .stat-box h3 {
-            margin: 0;
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            transition: transform 0.3s, background 0.3s;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.25);
+        }
+        .stat-card h3 {
             font-size: 14px;
             opacity: 0.9;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
-        .stat-box .value {
-            font-size: 32px;
-            font-weight: bold;
-            margin: 10px 0;
+        .stat-card .value {
+            font-size: 42px;
+            font-weight: 800;
+            margin: 15px 0;
+            text-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
-        .commands {
-            background: #f9f9f9;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 30px;
+        .stat-card.active { color: #4ade80; }
+        .stat-card.total { color: #60a5fa; }
+        .stat-card.groups { color: #f472b6; }
+        .stat-card.percent { color: #fbbf24; }
+        
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            margin-bottom: 40px;
         }
-        code {
-            background: #eee;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
+        .status-card {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+        }
+        .status-card.running { 
+            background: rgba(74, 222, 128, 0.2);
+            border: 2px solid #4ade80;
+        }
+        .status-card.stopped { 
+            background: rgba(248, 113, 113, 0.2);
+            border: 2px solid #f87171;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4ade80, #3b82f6);
+            border-radius: 15px;
+            transition: width 0.5s;
+        }
+        
+        .info-box {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 25px;
+            border-radius: 15px;
+            margin-top: 40px;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        .pulse {
+            animation: pulse 2s infinite;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🤖 <%= title %></h1>
-        <p>Bot: @<%= botUsername %></p>
+        <div class="header">
+            <h1 style="font-size: 42px; margin-bottom: 10px;">🤖 <%= title %></h1>
+            <p style="opacity: 0.9; font-size: 18px;">Fully Automated Telegram Member Generator & Adder</p>
+            <p style="margin-top: 20px; opacity: 0.8;">Bot: @Nova_marketing_bot | Admin: @NOVA_X_TEAM</p>
+        </div>
         
-        <div class="stats">
-            <div class="stat-box" style="background: #2196F3;">
-                <h3>ACTIVE MEMBERS</h3>
-                <div class="value" id="members"><%= stats.activeMembers %></div>
+        <div class="stats-grid">
+            <div class="stat-card active">
+                <h3>ACTIVE MEMBERS READY</h3>
+                <div class="value"><%= stats.activeMembers %></div>
+                <p>Verified active users</p>
             </div>
-            <div class="stat-box" style="background: #4CAF50;">
-                <h3>TOTAL ADDED</h3>
-                <div class="value" id="added"><%= stats.totalAdded %></div>
+            <div class="stat-card total">
+                <h3>GENERATED TOTAL</h3>
+                <div class="value"><%= stats.generatedTotal %></div>
+                <p>All checked users</p>
             </div>
-            <div class="stat-box" style="background: #FF9800;">
-                <h3>TARGET GROUPS</h3>
-                <div class="value" id="groups"><%= stats.totalGroups %></div>
+            <div class="stat-card groups">
+                <h3>ADDED TO GROUPS</h3>
+                <div class="value"><%= stats.totalAdded %></div>
+                <p>Successfully added</p>
             </div>
-            <div class="stat-box" style="background: <%= stats.isAutoAdding ? '#4CAF50' : '#f44336' %>;">
-                <h3>AUTO-ADD STATUS</h3>
-                <div class="value"><%= stats.isAutoAdding ? 'RUNNING' : 'STOPPED' %></div>
+            <div class="stat-card percent">
+                <h3>ACTIVITY RATE</h3>
+                <div class="value"><%= stats.activePercent %>%</div>
+                <p>Active from generated</p>
             </div>
         </div>
         
-        <div class="commands">
-            <h3>📋 BOT COMMANDS</h3>
-            <p><strong>Basic:</strong> <code>/start</code> <code>/help</code> <code>/stats</code> <code>/id</code></p>
-            <p><strong>Groups:</strong> <code>/addgroup</code> <code>/listgroups</code> <code>/removegroup</code></p>
-            <p><strong>Members:</strong> <code>/addmember</code> <code>/listmembers</code> <code>/removemember</code></p>
-            <p><strong>Auto-Add:</strong> <code>/startauto</code> <code>/stopauto</code> <code>/settime</code></p>
-            <p><strong>Admin ID:</strong> 8581477799 (@NOVA_X_TEAM)</p>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: <%= stats.activePercent %>%"></div>
+        </div>
+        
+        <div class="status-grid">
+            <div class="status-card <%= stats.isAutoGenerating ? 'running pulse' : 'stopped' %>">
+                <h3>AUTO-GENERATION</h3>
+                <div class="value" style="font-size: 36px;">
+                    <%= stats.isAutoGenerating ? 'RUNNING 🟢' : 'STOPPED 🔴' %>
+                </div>
+                <p>Batch size: <%= stats.batchSize %> users</p>
+                <p>Every 5 minutes</p>
+            </div>
+            <div class="status-card <%= stats.isAutoAdding ? 'running pulse' : 'stopped' %>">
+                <h3>AUTO-ADDING</h3>
+                <div class="value" style="font-size: 36px;">
+                    <%= stats.isAutoAdding ? 'RUNNING 🟢' : 'STOPPED 🔴' %>
+                </div>
+                <p><%= stats.timerMinutes %> minutes interval</p>
+                <p>Only active users</p>
+            </div>
+        </div>
+        
+        <div class="info-box">
+            <h3 style="margin-bottom: 20px; color: #60a5fa;">✨ SYSTEM WORKFLOW</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 32px; margin-bottom: 10px;">1️⃣</div>
+                    <h4>Generate IDs</h4>
+                    <p>Creates random Telegram user IDs</p>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 32px; margin-bottom: 10px;">2️⃣</div>
+                    <h4>Check Activity</h4>
+                    <p>Verifies which users are active</p>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 32px; margin-bottom: 10px;">3️⃣</div>
+                    <h4>Smart Add</h4>
+                    <p>Adds only active users to groups</p>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 32px; margin-bottom: 10px;">4️⃣</div>
+                    <h4>Auto-Retry</h4>
+                    <p>Multiple methods for success</p>
+                </div>
+            </div>
+            
+            <div style="margin-top: 30px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 10px;">
+                <h4 style="color: #4ade80; margin-bottom: 10px;">📊 CURRENT STATS</h4>
+                <p>• Target Groups: <strong><%= stats.groups %></strong></p>
+                <p>• Active Members Ready: <strong><%= stats.activeMembers %></strong></p>
+                <p>• Success Rate: <strong><%= stats.activePercent %>%</strong></p>
+                <p>• Total Added: <strong><%= stats.totalAdded %></strong></p>
+            </div>
         </div>
     </div>
     
     <script>
-        // Auto-refresh stats every 10 seconds
-        setInterval(async () => {
-            try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                
-                if (data.success) {
-                    document.getElementById('members').textContent = data.stats.activeMembers;
-                    document.getElementById('added').textContent = data.stats.totalAdded;
-                    document.getElementById('groups').textContent = data.stats.totalGroups;
-                }
-            } catch (error) {
-                console.log('Error refreshing stats:', error);
-            }
+        // Auto-refresh every 10 seconds
+        setInterval(() => {
+            location.reload();
         }, 10000);
+        
+        // Add pulse animation to running status
+        document.querySelectorAll('.pulse').forEach(el => {
+            el.style.animation = 'pulse 2s infinite';
+        });
     </script>
 </body>
 </html>
