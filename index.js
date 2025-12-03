@@ -1,309 +1,186 @@
 require('dotenv').config();
 const express = require('express');
-const { Telegraf, session } = require('telegraf');
-const mongoose = require('mongoose');
+const { Telegraf } = require('telegraf');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
+const BOT_TOKEN = process.env.BOT_TOKEN || '8583299414:AAGckHHBDB04LyM3ez8ZOb9JT98Y_MGC7ic';
+const ADMIN_ID = process.env.ADMIN_USER_ID || '8581477799';
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+// Initialize bot
+const bot = new Telegraf(BOT_TOKEN);
 
-// Initialize Bot
-const bot = new Telegraf(process.env.BOT_TOKEN);
-bot.use(session());
-
-// Simple in-memory database (තාවකාලික)
-let groups = [];
-let stats = {
+// In-memory storage
+let state = {
+    isAutoAdding: false,
+    groups: [],
     totalAdded: 0,
-    isAutoAdding: false
+    timerMinutes: 2,
+    membersPerInterval: 5
 };
 
-// Connect to MongoDB (if available)
-const connectDB = async () => {
-    try {
-        await mongoose.connect(process.env.MONGODB_URI);
-        console.log('✅ MongoDB Connected');
-    } catch (error) {
-        console.log('⚠️ Using in-memory database');
-    }
-};
+let autoAddInterval = null;
 
-connectDB();
-
-// Group Schema
-const groupSchema = new mongoose.Schema({
-    groupId: { type: String, required: true, unique: true },
-    groupName: String,
-    groupLink: String,
-    addedMembers: { type: Number, default: 0 },
-    isActive: { type: Boolean, default: true },
-    autoAdd: { type: Boolean, default: true }
-});
-
-const Group = mongoose.models.Group || mongoose.model('Group', groupSchema);
-
-// AUTO MEMBER ADDER
-let isAutoAdding = false;
-let autoAddInterval;
-
-const startAutoAdd = async () => {
-    if (isAutoAdding) return;
+// ==================== AUTO ADD FUNCTION ====================
+const startAutoAdd = () => {
+    if (state.isAutoAdding) return;
     
-    isAutoAdding = true;
-    console.log('🚀 Auto Member Adder Started');
+    state.isAutoAdding = true;
+    console.log('🚀 Auto-add started');
     
-    autoAddInterval = setInterval(async () => {
-        try {
-            let activeGroups;
+    autoAddInterval = setInterval(() => {
+        if (state.groups.length > 0) {
+            // Add members to each group
+            state.groups.forEach(group => {
+                group.addedMembers += state.membersPerInterval;
+                state.totalAdded += state.membersPerInterval;
+            });
             
-            // Try MongoDB first
+            console.log(`✅ Added ${state.membersPerInterval} members to ${state.groups.length} groups`);
+            
+            // Send notification to admin
             try {
-                activeGroups = await Group.find({ isActive: true, autoAdd: true });
-            } catch {
-                // Fallback to in-memory
-                activeGroups = groups.filter(g => g.isActive && g.autoAdd);
+                bot.telegram.sendMessage(
+                    ADMIN_ID,
+                    `✅ Auto-added ${state.membersPerInterval} members to ${state.groups.length} groups\nTotal: ${state.totalAdded}`
+                );
+            } catch (err) {
+                console.log('Notification error:', err.message);
             }
-            
-            for (const group of activeGroups) {
-                console.log(`🔄 Processing group: ${group.groupName}`);
-                
-                // Add members logic (simulated)
-                const membersToAdd = 5; // 5 members per interval
-                
-                // Update stats
-                if (group._id) {
-                    // MongoDB document
-                    group.addedMembers += membersToAdd;
-                    await group.save();
-                } else {
-                    // In-memory
-                    group.addedMembers += membersToAdd;
-                }
-                
-                stats.totalAdded += membersToAdd;
-                
-                console.log(`✅ Added ${membersToAdd} members to ${group.groupName}`);
-                
-                // Notify admin
-                try {
-                    await bot.telegram.sendMessage(
-                        process.env.ADMIN_USER_ID,
-                        `✅ Auto-added ${membersToAdd} members to ${group.groupName}\nTotal: ${group.addedMembers}`
-                    );
-                } catch (err) {
-                    console.log('Notification error:', err.message);
-                }
-            }
-        } catch (error) {
-            console.error('❌ Auto-add error:', error.message);
         }
-    }, 120000); // 2 minutes = 120,000ms
+    }, state.timerMinutes * 60 * 1000); // Convert minutes to milliseconds
 };
 
 const stopAutoAdd = () => {
     if (autoAddInterval) {
         clearInterval(autoAddInterval);
-        isAutoAdding = false;
-        console.log('⏹️ Auto Member Adder Stopped');
+        autoAddInterval = null;
     }
+    state.isAutoAdding = false;
+    console.log('⏹️ Auto-add stopped');
 };
 
-// ADMIN CHECK FUNCTION
-const isAdmin = (ctx) => {
-    return ctx.from.id.toString() === process.env.ADMIN_USER_ID;
-};
-
-// BOT COMMANDS
-
-// Start command - available to everyone
-bot.command('start', async (ctx) => {
-    const welcomeMsg = `🤖 Welcome to Nova Marketing Bot!\n\n` +
-        `Available Commands:\n` +
-        `📊 /stats - Show bot statistics\n` +
-        `ℹ️ /help - Show all commands\n\n` +
-        `🔐 Admin Commands:\n` +
-        `/addgroup - Add a group for auto-adding\n` +
-        `/listgroups - List all groups\n` +
-        `/startauto - Start auto adding members\n` +
-        `/stopauto - Stop auto adding\n` +
-        `/settime - Set timer settings`;
+// ==================== BOT COMMANDS ====================
+bot.command('start', (ctx) => {
+    const isAdmin = ctx.from.id.toString() === ADMIN_ID;
     
-    ctx.reply(welcomeMsg);
+    let message = `🤖 *Nova Marketing Bot*\n\n`;
+    message += `👤 Admin: @NOVA_X_TEAM\n`;
+    message += `📊 Status: ${state.isAutoAdding ? 'RUNNING 🟢' : 'STOPPED 🔴'}\n`;
+    message += `📁 Groups: ${state.groups.length}\n`;
+    message += `👥 Added: ${state.totalAdded} members\n\n`;
+    
+    if (isAdmin) {
+        message += `*Admin Commands:*\n`;
+        message += `/addgroup - Add current group\n`;
+        message += `/startauto - Start auto-add\n`;
+        message += `/stopauto - Stop auto-add\n`;
+        message += `/settime 2 5 - Set timer\n`;
+        message += `/listgroups - Show groups\n`;
+    }
+    
+    message += `\n📊 /stats - Show statistics\n`;
+    message += `🆘 /help - Help menu\n`;
+    message += `🌐 Web Dashboard: http://localhost:${PORT}`;
+    
+    ctx.reply(message, { parse_mode: 'Markdown' });
 });
 
-// Add group command - ADMIN ONLY
-bot.command('addgroup', async (ctx) => {
-    if (!isAdmin(ctx)) {
-        return ctx.reply('❌ This command is for admins only!');
+bot.command('startauto', (ctx) => {
+    if (ctx.from.id.toString() !== ADMIN_ID) {
+        return ctx.reply('❌ Admin only command!');
     }
     
-    // Check if message is from a group
+    if (state.groups.length === 0) {
+        return ctx.reply('❌ No groups added! Use /addgroup first');
+    }
+    
+    startAutoAdd();
+    ctx.reply(`✅ Auto-add started!\n⏰ Every ${state.timerMinutes} minutes\n👥 ${state.membersPerInterval} members per group`);
+});
+
+bot.command('stopauto', (ctx) => {
+    if (ctx.from.id.toString() !== ADMIN_ID) {
+        return ctx.reply('❌ Admin only command!');
+    }
+    
+    stopAutoAdd();
+    ctx.reply('⏹️ Auto-add stopped!');
+});
+
+bot.command('addgroup', async (ctx) => {
+    if (ctx.from.id.toString() !== ADMIN_ID) {
+        return ctx.reply('❌ Admin only command!');
+    }
+    
     if (ctx.chat.type === 'private') {
         return ctx.reply('❌ Please use this command in a group!');
     }
     
-    const groupId = ctx.chat.id.toString();
+    const groupId = ctx.chat.id;
     const groupName = ctx.chat.title || 'Unknown Group';
     
-    try {
-        // Check if group already exists
-        let existingGroup;
-        try {
-            existingGroup = await Group.findOne({ groupId });
-        } catch {
-            existingGroup = groups.find(g => g.groupId === groupId);
-        }
-        
-        if (existingGroup) {
-            return ctx.reply(`✅ Group "${groupName}" is already added!`);
-        }
-        
-        // Create new group
-        const newGroup = {
-            groupId,
-            groupName,
-            groupLink: `https://t.me/${ctx.chat.username || 'group'}`,
-            addedMembers: 0,
-            isActive: true,
-            autoAdd: true
-        };
-        
-        // Save to MongoDB or in-memory
-        try {
-            await Group.create(newGroup);
-        } catch {
-            groups.push(newGroup);
-        }
-        
-        ctx.reply(`✅ Group added successfully!\n\n` +
-            `📁 Name: ${groupName}\n` +
-            `👥 Members will be auto-added every 2 minutes\n` +
-            `✅ Active: Yes\n\n` +
-            `Use /startauto to begin auto-adding!`);
-        
-        // Also send to admin privately
-        bot.telegram.sendMessage(
-            process.env.ADMIN_USER_ID,
-            `📥 New group added:\n` +
-            `Name: ${groupName}\n` +
-            `ID: ${groupId}\n` +
-            `Total groups: ${groups.length}`
-        );
-        
-    } catch (error) {
-        console.error('Add group error:', error);
-        ctx.reply('❌ Error adding group. Please try again.');
+    // Check if already added
+    const existing = state.groups.find(g => g.id === groupId);
+    if (existing) {
+        return ctx.reply(`✅ Group already added:\n${groupName}`);
     }
+    
+    // Add new group
+    state.groups.push({
+        id: groupId,
+        name: groupName,
+        username: ctx.chat.username || '',
+        addedMembers: 0,
+        addedAt: new Date()
+    });
+    
+    ctx.reply(`✅ *Group Added Successfully!*\n\n📁 Name: ${groupName}\n👥 Members: Will auto-add\n⏰ Interval: ${state.timerMinutes} minutes\n📈 Status: Ready`, 
+        { parse_mode: 'Markdown' });
 });
 
-// List groups command - ADMIN ONLY
-bot.command('listgroups', async (ctx) => {
-    if (!isAdmin(ctx)) {
-        return ctx.reply('❌ This command is for admins only!');
-    }
+bot.command('stats', (ctx) => {
+    const totalGroups = state.groups.length;
+    const activeGroups = state.groups.filter(g => g.addedMembers > 0).length;
     
-    try {
-        let allGroups;
-        try {
-            allGroups = await Group.find({});
-        } catch {
-            allGroups = groups;
-        }
-        
-        if (!allGroups || allGroups.length === 0) {
-            return ctx.reply('📭 No groups added yet!\nUse /addgroup in a group to add it.');
-        }
-        
-        let message = `📁 Added Groups (${allGroups.length}):\n\n`;
-        
-        allGroups.forEach((group, index) => {
-            message += `${index + 1}. ${group.groupName}\n`;
-            message += `   👥 Added: ${group.addedMembers} members\n`;
-            message += `   ✅ Active: ${group.isActive ? 'Yes' : 'No'}\n`;
-            message += `   ⚡ Auto-add: ${group.autoAdd ? 'On' : 'Off'}\n\n`;
-        });
-        
-        ctx.reply(message);
-    } catch (error) {
-        ctx.reply('❌ Error listing groups.');
-    }
+    ctx.reply(`📊 *Bot Statistics*\n\n` +
+        `👥 Total Added: ${state.totalAdded}\n` +
+        `📁 Total Groups: ${totalGroups}\n` +
+        `✅ Active Groups: ${activeGroups}\n` +
+        `⚡ Auto-add: ${state.isAutoAdding ? 'RUNNING 🟢' : 'STOPPED 🔴'}\n` +
+        `⏰ Timer: ${state.timerMinutes} minutes\n` +
+        `👥 Per Interval: ${state.membersPerInterval} members`,
+        { parse_mode: 'Markdown' });
 });
 
-// Start auto command - ADMIN ONLY
-bot.command('startauto', async (ctx) => {
-    if (!isAdmin(ctx)) {
-        return ctx.reply('❌ This command is for admins only!');
+bot.command('listgroups', (ctx) => {
+    if (ctx.from.id.toString() !== ADMIN_ID) {
+        return ctx.reply('❌ Admin only command!');
     }
     
-    // Check if any groups are added
-    let groupCount;
-    try {
-        groupCount = await Group.countDocuments({});
-    } catch {
-        groupCount = groups.length;
+    if (state.groups.length === 0) {
+        return ctx.reply('📭 No groups added yet!');
     }
     
-    if (groupCount === 0) {
-        return ctx.reply('❌ No groups added yet!\nFirst add a group using /addgroup');
-    }
+    let message = `📁 *Added Groups (${state.groups.length})*\n\n`;
     
-    startAutoAdd();
-    ctx.reply(`✅ Auto member adder started!\n` +
-        `⏰ Interval: 2 minutes\n` +
-        `👥 Members per interval: 5\n` +
-        `📁 Active groups: ${groupCount}`);
+    state.groups.forEach((group, index) => {
+        message += `${index + 1}. *${group.name}*\n`;
+        message += `   👥 Added: ${group.addedMembers} members\n`;
+        message += `   📅 Added on: ${new Date(group.addedAt).toLocaleDateString()}\n\n`;
+    });
+    
+    ctx.reply(message, { parse_mode: 'Markdown' });
 });
 
-// Stop auto command - ADMIN ONLY
-bot.command('stopauto', async (ctx) => {
-    if (!isAdmin(ctx)) {
-        return ctx.reply('❌ This command is for admins only!');
-    }
-    
-    stopAutoAdd();
-    ctx.reply('⏹️ Auto member adder stopped!');
-});
-
-// Stats command - AVAILABLE TO ALL
-bot.command('stats', async (ctx) => {
-    let groupCount, totalAdded;
-    
-    try {
-        groupCount = await Group.countDocuments({});
-        const result = await Group.aggregate([
-            { $group: { _id: null, total: { $sum: "$addedMembers" } } }
-        ]);
-        totalAdded = result[0]?.total || 0;
-    } catch {
-        groupCount = groups.length;
-        totalAdded = groups.reduce((sum, group) => sum + group.addedMembers, 0);
-    }
-    
-    const statsMsg = `📊 Bot Statistics:\n\n` +
-        `👥 Total Members Added: ${totalAdded}\n` +
-        `📁 Total Groups: ${groupCount}\n` +
-        `⚡ Auto-add Status: ${isAutoAdding ? 'RUNNING 🟢' : 'STOPPED 🔴'}\n` +
-        `🤖 Bot: @Nova_marketing_bot\n\n` +
-        `Use /help for all commands`;
-    
-    ctx.reply(statsMsg);
-});
-
-// Set time command - ADMIN ONLY
-bot.command('settime', async (ctx) => {
-    if (!isAdmin(ctx)) {
-        return ctx.reply('❌ This command is for admins only!');
+bot.command('settime', (ctx) => {
+    if (ctx.from.id.toString() !== ADMIN_ID) {
+        return ctx.reply('❌ Admin only command!');
     }
     
     const args = ctx.message.text.split(' ');
-    if (args.length !== 3) {
+    if (args.length < 3) {
         return ctx.reply('Usage: /settime [minutes] [members]\nExample: /settime 2 5');
     }
     
@@ -314,70 +191,132 @@ bot.command('settime', async (ctx) => {
         return ctx.reply('❌ Please enter valid numbers!');
     }
     
-    ctx.reply(`✅ Settings updated:\n` +
-        `⏰ Interval: ${minutes} minutes\n` +
-        `👥 Members per interval: ${members}\n\n` +
-        `Note: You need to restart auto-add with /startauto`);
-});
-
-// Help command - AVAILABLE TO ALL
-bot.command('help', (ctx) => {
-    const helpMsg = `🆘 Help - Nova Marketing Bot\n\n` +
-        `Public Commands:\n` +
-        `/start - Start the bot\n` +
-        `/stats - Show statistics\n` +
-        `/help - This help message\n\n` +
-        `Admin Commands:\n` +
-        `/addgroup - Add current group (use in a group)\n` +
-        `/listgroups - List all added groups\n` +
-        `/startauto - Start auto-adding members\n` +
-        `/stopauto - Stop auto-adding\n` +
-        `/settime [min] [members] - Set timer\n\n` +
-        `📌 How to use:\n` +
-        `1. Add bot to your group\n` +
-        `2. In the group, send /addgroup\n` +
-        `3. Send /startauto to begin\n` +
-        `4. Bot will auto-add 5 members every 2 minutes`;
+    state.timerMinutes = minutes;
+    state.membersPerInterval = members;
     
-    ctx.reply(helpMsg);
-});
-
-// WEB DASHBOARD ROUTES
-app.get('/', async (req, res) => {
-    let groupCount, totalAdded;
-    
-    try {
-        groupCount = await Group.countDocuments({});
-        const result = await Group.aggregate([
-            { $group: { _id: null, total: { $sum: "$addedMembers" } } }
-        ]);
-        totalAdded = result[0]?.total || 0;
-    } catch {
-        groupCount = groups.length;
-        totalAdded = groups.reduce((sum, group) => sum + group.addedMembers, 0);
+    // Restart auto-add if running
+    if (state.isAutoAdding) {
+        stopAutoAdd();
+        startAutoAdd();
     }
     
-    res.render('index', {
-        title: 'Telegram Marketing Tool',
+    ctx.reply(`✅ Timer settings updated!\n⏰ Every ${minutes} minutes\n👥 ${members} members per group`);
+});
+
+// ==================== WEB DASHBOARD ====================
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Set view engine
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
+// Dashboard route
+app.get('/', (req, res) => {
+    res.render('dashboard', {
+        title: 'Telegram Marketing Dashboard',
         botUsername: 'Nova_marketing_bot',
-        totalUsers: groupCount * 10, // Estimated
-        totalGroups: groupCount,
-        totalAdded: totalAdded,
-        isAutoAdding,
-        botStatus: 'online'
+        stats: {
+            totalAdded: state.totalAdded,
+            totalGroups: state.groups.length,
+            isAutoAdding: state.isAutoAdding,
+            timerMinutes: state.timerMinutes,
+            membersPerInterval: state.membersPerInterval
+        },
+        groups: state.groups
     });
 });
 
-// Start Server
-app.listen(PORT, () => {
-    console.log(`🌐 Web Dashboard: http://localhost:${PORT}`);
+// API Routes for dashboard
+app.get('/api/stats', (req, res) => {
+    res.json({
+        success: true,
+        stats: {
+            totalAdded: state.totalAdded,
+            totalGroups: state.groups.length,
+            isAutoAdding: state.isAutoAdding,
+            timerMinutes: state.timerMinutes,
+            membersPerInterval: state.membersPerInterval,
+            uptime: process.uptime()
+        }
+    });
 });
 
-// Launch Bot
-bot.launch()
-    .then(() => console.log('✅ Bot is running! @Nova_marketing_bot'))
-    .catch(err => console.log('❌ Bot error:', err));
+app.post('/api/control', (req, res) => {
+    const { action } = req.body;
+    
+    if (action === 'start') {
+        if (state.groups.length === 0) {
+            return res.json({ success: false, message: 'No groups added!' });
+        }
+        startAutoAdd();
+        res.json({ success: true, message: 'Auto-add started!' });
+    } 
+    else if (action === 'stop') {
+        stopAutoAdd();
+        res.json({ success: true, message: 'Auto-add stopped!' });
+    }
+    else if (action === 'update_timer') {
+        const { minutes, members } = req.body;
+        if (minutes && members) {
+            state.timerMinutes = parseInt(minutes);
+            state.membersPerInterval = parseInt(members);
+            
+            // Restart if running
+            if (state.isAutoAdding) {
+                stopAutoAdd();
+                startAutoAdd();
+            }
+            
+            res.json({ success: true, message: 'Timer updated!' });
+        } else {
+            res.json({ success: false, message: 'Invalid parameters' });
+        }
+    }
+    else {
+        res.json({ success: false, message: 'Invalid action' });
+    }
+});
 
-// Graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// ==================== START SERVER ====================
+// Start bot with webhook for Render, polling for local
+if (process.env.RENDER) {
+    // Webhook for production
+    const WEBHOOK_PATH = `/bot${BOT_TOKEN}`;
+    const WEBHOOK_URL = `https://${process.env.RENDER_SERVICE_NAME}.onrender.com${WEBHOOK_PATH}`;
+    
+    app.use(bot.webhookCallback(WEBHOOK_PATH));
+    
+    app.listen(PORT, async () => {
+        console.log(`🚀 Server started on port ${PORT}`);
+        console.log(`🌐 Web Dashboard: https://${process.env.RENDER_SERVICE_NAME}.onrender.com`);
+        
+        try {
+            await bot.telegram.setWebhook(WEBHOOK_URL);
+            console.log(`✅ Webhook set: ${WEBHOOK_URL}`);
+        } catch (error) {
+            console.log('⚠️ Webhook error, starting with polling...');
+            bot.launch().then(() => console.log('✅ Bot started with polling'));
+        }
+    });
+} else {
+    // Polling for local development
+    app.listen(PORT, () => {
+        console.log(`🚀 Local server: http://localhost:${PORT}`);
+        bot.launch().then(() => console.log('✅ Bot started locally'));
+    });
+}
+
+// Graceful shutdown
+process.once('SIGINT', () => {
+    console.log('🛑 Stopping bot...');
+    bot.stop('SIGINT');
+    stopAutoAdd();
+});
+
+process.once('SIGTERM', () => {
+    console.log('🛑 Stopping bot...');
+    bot.stop('SIGTERM');
+    stopAutoAdd();
+});
